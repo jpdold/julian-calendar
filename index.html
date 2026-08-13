@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Julian Date Calendar (JDN) — Gregorian Benchmark</title>
+<style>
+:root{
+  --paper:#ECE9E2;
+  --ink:#1E232B;
+  --box:#C9CCD1;          /* medium gray day boxes */
+  --box-edge:#A9ADB4;
+  --today:#1D5FE0;        /* thick blue border */
+  --greg:#5B6B84;         /* gregorian benchmark tone */
+  --card:#FBFAF7;
+  --card-edge:#8E9299;
+  --cell:144px;           /* 1.5in @ 96dpi */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,sans-serif;padding:22px 26px 60px}
+
+/* ---------- header ---------- */
+header{max-width:calc(7*var(--cell) + 6*4px);margin:0 auto 14px}
+.eyebrow{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#6b6f76}
+h1{font-family:Iowan Old Style,Palatino Linotype,Georgia,serif;font-weight:600;font-size:34px;line-height:1.1;margin:2px 0 0}
+h1 .yr{color:#6b6f76;font-weight:400}
+.gspan{font-size:13px;color:var(--greg);margin-top:2px}
+.bar{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
+button,.filebtn{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--box-edge);background:#fff;color:var(--ink);cursor:pointer;border-radius:4px}
+button:hover,.filebtn:hover{border-color:var(--ink)}
+button:focus-visible{outline:2px solid var(--today);outline-offset:2px}
+.spacer{flex:1}
+#bejBtn.on{background:linear-gradient(135deg,#0fd27a,#1D5FE0 55%,#b0179c);color:#fff;border-color:transparent}
+.hint{font-size:12px;color:#6b6f76;margin-top:8px}
+
+/* ---------- grid ---------- */
+.wrap{max-width:calc(7*var(--cell) + 6*4px);margin:0 auto}
+.dow{display:grid;grid-template-columns:repeat(7,var(--cell));gap:4px;margin-bottom:4px}
+.dow div{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#6b6f76;text-align:center;padding:4px 0}
+#grid{display:grid;grid-template-columns:repeat(7,var(--cell));gap:4px}
+.blank{width:var(--cell);height:var(--cell)}
+
+.daybox{position:relative;width:var(--cell);height:var(--cell);background:var(--box);border:1px solid var(--box-edge);overflow:hidden;cursor:pointer}
+.daybox.today{border:4px solid var(--today)}
+.badges{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:3px 4px;pointer-events:none;z-index:30}
+.jnum{font-family:Iowan Old Style,Palatino Linotype,Georgia,serif;font-size:16px;font-weight:700;line-height:1;background:rgba(236,233,226,.75);padding:1px 4px;border-radius:3px}
+.gnum{font-size:9px;color:var(--greg);background:rgba(236,233,226,.75);padding:2px 3px;border-radius:3px;letter-spacing:.03em}
+.cards{position:absolute;inset:0;z-index:10}
+
+/* ---------- entry title cards ---------- */
+.card{position:absolute;background:var(--card);border:1px solid var(--card-edge);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;cursor:default}
+.card .ct{font-weight:600;width:100%;padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .tm{color:#555;width:100%}
+.card.s144 .ct{font-size:13px}.card.s144 .tm{font-size:12px}
+.card.s72 .ct{font-size:10px}.card.s72 .tm{font-size:9px}
+.card.s48 .ct{font-size:8px}.card.s48 .tm{font-size:7px}
+.card.s16 .ct,.card.s16 .tm,.card.s16 .detbtn{display:none}
+.card.s16{cursor:pointer}
+.card.s16::after{content:"";width:6px;height:6px;border-radius:50%;background:#3d4450}
+.detbtn{position:absolute;right:1px;bottom:1px;width:14px;height:14px;padding:0;line-height:12px;font-size:9px;border:1px solid var(--card-edge);background:#fff;border-radius:3px;cursor:pointer}
+.card.s48 .detbtn{width:12px;height:12px;font-size:8px;line-height:10px}
+
+/* priority blink */
+@keyframes pblink{0%,49%{box-shadow:inset 0 0 0 3px var(--pc)}50%,100%{box-shadow:inset 0 0 0 3px transparent}}
+.card.prio{animation:pblink 1s step-end infinite}
+
+/* ---------- bejeweled mode ---------- */
+@keyframes glisten{0%{transform:translateX(-160%) rotate(18deg)}100%{transform:translateX(260%) rotate(18deg)}}
+@keyframes jblink{0%,49%{filter:drop-shadow(0 0 5px var(--pc)) drop-shadow(0 0 2px var(--pc))}50%,100%{filter:none}}
+body.bej .card{
+  border:none;background:linear-gradient(135deg,var(--j3),var(--j1) 38%,var(--j2) 72%,var(--j1));
+  clip-path:polygon(18% 0,82% 0,100% 18%,100% 82%,82% 100%,18% 100%,0 82%,0 18%);
+  cursor:pointer;
+}
+body.bej .card::before{content:"";position:absolute;inset:14%;
+  clip-path:polygon(18% 0,82% 0,100% 18%,100% 82%,82% 100%,18% 100%,0 82%,0 18%);
+  background:linear-gradient(315deg,var(--j2),var(--j1) 45%,var(--j3));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.55)}
+body.bej .card::after{content:"";position:absolute;top:-30%;bottom:-30%;width:38%;left:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);
+  animation:glisten 2.8s linear infinite;border-radius:0}
+body.bej .card.s16::after{animation:none;background:none}
+body.bej .card .ct,body.bej .card .tm,body.bej .card .detbtn{display:none}
+body.bej .card.prio{animation:jblink 1s step-end infinite;box-shadow:none}
+.jewel-emerald{--j1:#12c47a;--j2:#04603a;--j3:#b8ffde}
+.jewel-ruby{--j1:#e42552;--j2:#7a0621;--j3:#ffc4d2}
+.jewel-sapphire{--j1:#2a6bf2;--j2:#0b2e7d;--j3:#c3d8ff}
+.jewel-amber{--j1:#f2a72a;--j2:#8a5203;--j3:#ffe9bd}
+.jewel-amethyst{--j1:#9d3ee0;--j2:#4a0f7d;--j3:#e9ccff}
+.jewel-topaz{--j1:#1fc2c9;--j2:#075e63;--j3:#c8fbff}
+
+/* ---------- voice entry ---------- */
+@keyframes micpulse{50%{opacity:.5}}
+#voiceBtn.listening,.micbtn.listening{background:#e42525;color:#fff;border-color:#e42525;animation:micpulse 1s infinite}
+.descwrap{display:flex;gap:6px}
+.descwrap input{flex:1}
+.micbtn{width:36px;padding:0;font-size:15px;line-height:1}
+
+/* ---------- year chart view ---------- */
+#chartWrap{display:none;max-width:calc(7*var(--cell) + 6*4px);margin:0 auto;overflow-x:auto}
+body.chart #chartWrap{display:block}
+body.chart .wrap{display:none}
+table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
+.jchart th{background:var(--ink);color:#fff;font-size:11px;letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--ink);padding:6px 4px;min-width:66px}
+.jchart th.dayth{min-width:46px}
+.jchart td{border:1px solid var(--box-edge);text-align:center;font-size:13px;padding:5px 4px;position:relative}
+.jchart td.dayhdr{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700;font-size:12px}
+.jchart td.cell{background:var(--box);cursor:pointer}
+.jchart td.cell:hover{background:#b9bec6}
+.jchart td.void{background:#e3e1da;border-color:#d4d1c9;cursor:default}
+.jchart td.tday{outline:3px solid var(--today);outline-offset:-3px;font-weight:700}
+.jchart td .cnt{position:absolute;top:0;right:2px;font-size:8px;line-height:1.4;color:#fff;background:var(--greg);border-radius:6px;padding:0 3px;min-width:10px}
+.jchart td.haspr::after{content:"";position:absolute;left:2px;top:3px;width:5px;height:5px;border-radius:50%;background:var(--pcdot,#e42525)}
+
+#tip{position:fixed;z-index:200;background:var(--ink);color:#fff;font-size:12px;line-height:1.45;padding:7px 10px;border-radius:5px;pointer-events:none;display:none;max-width:230px;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+#tip b{font-size:12.5px}
+
+/* ---------- modals ---------- */
+.overlay{position:fixed;inset:0;background:rgba(30,35,43,.45);display:none;align-items:center;justify-content:center;z-index:100}
+.overlay.open{display:flex}
+.modal{background:#fff;width:340px;max-width:92vw;max-height:90vh;overflow:auto;border-radius:8px;padding:20px 22px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.modal h2{font-family:Iowan Old Style,Palatino Linotype,Georgia,serif;font-size:20px;margin-bottom:2px}
+.modal .sub{font-size:12px;color:var(--greg);margin-bottom:14px}
+.frow{margin-bottom:11px}
+.frow label{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#6b6f76;margin-bottom:3px}
+.frow select,.frow input[type=text],.frow input[type=time]{width:100%;font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--box-edge);border-radius:4px;background:#fff}
+.frow input[type=color]{width:44px;height:28px;padding:0;border:1px solid var(--box-edge);border-radius:4px;vertical-align:middle;cursor:pointer}
+.inline{display:flex;align-items:center;gap:10px}
+.inline label.chk{display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--ink);margin:0;cursor:pointer}
+.mbtns{display:flex;gap:8px;margin-top:16px}
+.mbtns .primary{background:var(--today);color:#fff;border-color:var(--today)}
+.mbtns .danger{color:#b0102c;border-color:#b0102c}
+.dl{display:grid;grid-template-columns:110px 1fr;gap:5px 10px;font-size:14px;margin:12px 0 4px}
+.dl dt{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#6b6f76;padding-top:2px}
+.dl dd{margin:0}
+.prioswatch{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+
+@media (prefers-reduced-motion:reduce){
+  .card.prio,body.bej .card.prio{animation:none;box-shadow:inset 0 0 0 3px var(--pc)}
+  body.bej .card::after{animation:none;display:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Julian Date Calendar (JDN 1–365) · Gregorian benchmark in blue-gray</div>
+  <h1 id="mTitle">—</h1>
+  <div class="gspan" id="gSpan">—</div>
+  <div class="bar">
+    <button id="prevBtn" aria-label="Previous month">◀</button>
+    <button id="todayBtn">Today</button>
+    <button id="nextBtn" aria-label="Next month">▶</button>
+    <span class="spacer"></span>
+    <button id="voiceBtn" title="Speak an entry, e.g. 'Dental appointment August 20 at 9 AM cleaning'">🎤 Voice Entry</button>
+    <button id="chartBtn">▦ Year Chart</button>
+    <button id="bejBtn">◆ Bejeweled Mode</button>
+    <button id="saveBtn">Save JSON</button>
+    <label class="filebtn">Load JSON<input type="file" id="loadInput" accept=".json" hidden></label>
+  </div>
+  <div class="hint">Click any empty area of a day box to add an entry. Entries are held in memory — use Save JSON to keep them, Load JSON to restore. Voice Entry needs Chrome/Edge with internet (browser speech service) and mic permission.</div>
+</header>
+
+<div class="wrap">
+  <div class="dow"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>
+  <div id="grid"></div>
+</div>
+
+<div id="chartWrap"></div>
+
+<div id="tip"></div>
+
+<!-- Entry modal -->
+<div class="overlay" id="entryOv">
+  <div class="modal">
+    <h2 id="entryTitle">New Entry</h2>
+    <div class="sub" id="entrySub"></div>
+    <div class="frow"><label for="fWhat">What</label><select id="fWhat"></select></div>
+    <div class="frow"><label for="fType">Type</label><select id="fType"></select></div>
+    <div class="frow"><label for="fDate">Date (this month)</label><select id="fDate"></select></div>
+    <div class="frow"><label for="fTime">Time</label><input type="time" id="fTime"></div>
+    <div class="frow"><label for="fDesc">Description (short)</label>
+      <div class="descwrap">
+        <input type="text" id="fDesc" maxlength="48" placeholder="e.g. Physical Therapy">
+        <button type="button" class="micbtn" id="descMic" title="Dictate description">🎤</button>
+      </div>
+    </div>
+    <div class="frow inline">
+      <label class="chk"><input type="checkbox" id="fPrio"> Priority (blinking border)</label>
+      <input type="color" id="fPrioC" value="#e42525" title="Priority border color">
+    </div>
+    <div class="mbtns">
+      <button class="primary" id="entrySave">Submit</button>
+      <button id="entryCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Details modal -->
+<div class="overlay" id="detOv">
+  <div class="modal">
+    <h2 id="detTitle">—</h2>
+    <div class="sub" id="detSub"></div>
+    <dl class="dl">
+      <dt>What</dt><dd id="dWhat"></dd>
+      <dt>Type</dt><dd id="dType"></dd>
+      <dt>Julian date</dt><dd id="dJul"></dd>
+      <dt>Gregorian</dt><dd id="dGreg"></dd>
+      <dt>Time</dt><dd id="dTime"></dd>
+      <dt>Description</dt><dd id="dDesc"></dd>
+      <dt>Priority</dt><dd id="dPrio"></dd>
+    </dl>
+    <div class="mbtns">
+      <button class="primary" id="detEdit">Edit</button>
+      <button class="danger" id="detDelete">Delete</button>
+      <button id="detClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ================= JDN (day-of-year) math ================= */
+const MON=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MABBR=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const F=Math.floor;
+function isLeap(y){return (y%4===0&&y%100!==0)||y%400===0;}
+function daysInMonth(y,m){return [31,isLeap(y)?29:28,31,30,31,30,31,31,30,31,30,31][m-1];}
+/* Julian date = ordinal day of year (001–365/366), per DoD convention */
+function jdnOf(y,m,d){let n=d;for(let i=1;i<m;i++)n+=daysInMonth(y,i);return n;}
+function pad3(n){return String(n).padStart(3,"0");}
+function dowOf(y,m,d){return new Date(y,m-1,d).getDay();} /* 0 = Sunday */
+
+/* ================= domain data ================= */
+const WHAT_TYPES={
+  "Appointment":["Medical","Dental","Vision","Therapy","Official","Legal","Financial","Personal","Other"],
+  "Meeting":["Work","Official Org","Unofficial","Committee","One-on-One","Volunteer","Other"],
+  "Event":["Family","Social","Community","Sports","Cultural","Ceremony","Other"],
+  "Conference":["Professional","Academic","Industry","Virtual","Other"],
+  "Deadline":["Work","Financial","Legal","Personal","Other"],
+  "Reminder":["Personal","Medication","Errand","Follow-up","Other"],
+  "Task":["Work","Home","Admin","Other"],
+  "Travel":["Flight","Drive","Train","Lodging","Other"],
+  "Holiday/Observance":["Federal","Religious","Personal","Other"],
+  "Other":["General"]
+};
+const JEWELS=["emerald","ruby","sapphire","amber","amethyst","topaz"];
+const MAX_PER_DAY=17; /* eight 0.5" squares + nine 0.1667" squares */
+
+/* ================= state ================= */
+let store={};          /* key "y-m-d" (Gregorian) -> [entry,...] */
+let nextId=1;
+let view={y:0,m:0};    /* displayed month */
+let today=null;        /* {y,m,d} */
+let editing=null;      /* {key,id} when editing */
+
+function key(y,m,d){return y+"-"+m+"-"+d;}
+function parseKey(k){const p=k.split("-").map(Number);return {y:p[0],m:p[1],d:p[2]};}
+function fmtTime(t){if(!t)return "";let[h,mi]=t.split(":").map(Number);
+  const ap=h>=12?"PM":"AM";h=h%12||12;return h+String(mi).padStart(2,"0")+ap;}
+function cardTitle(e){return e.desc&&e.desc.trim()?e.desc.trim():(e.what+": "+e.type);}
+
+/* ================= rendering ================= */
+const grid=document.getElementById("grid");
+function sortDay(arr){arr.sort((a,b)=>{
+  if(!a.time&&!b.time)return a.id-b.id;
+  if(!a.time)return 1;if(!b.time)return -1;
+  return a.time===b.time?a.id-b.id:(a.time<b.time?-1:1);});}
+
+/* layout: returns [{x,y,s}] for n entries within a 144px box */
+function layout(n){
+  const out=[];
+  if(n<=0)return out;
+  if(n===1){out.push({x:0,y:0,s:144});return out;}
+  if(n<=4){for(let i=0;i<n;i++)out.push({x:(i%2)*72,y:F(i/2)*72,s:72});return out;}
+  if(n<=9){for(let i=0;i<n;i++)out.push({x:(i%3)*48,y:F(i/3)*48,s:48});return out;}
+  /* >9: eight 0.5" squares, ninth cell subdivided into 0.1667" squares */
+  for(let i=0;i<8;i++)out.push({x:(i%3)*48,y:F(i/3)*48,s:48});
+  for(let i=8;i<n&&i<MAX_PER_DAY;i++){const j=i-8;
+    out.push({x:96+(j%3)*16,y:96+F(j/3)*16,s:16});}
+  return out;
+}
+
+function render(){
+  const y=view.y,m=view.m,days=daysInMonth(y,m);
+  document.getElementById("mTitle").innerHTML=MON[m-1]+' <span class="yr">'+y+"</span>";
+  document.getElementById("gSpan").textContent="Julian dates "+pad3(jdnOf(y,m,1))+
+    " – "+pad3(jdnOf(y,m,days))+"  ·  Gregorian "+MABBR[m-1]+" 1 – "+MABBR[m-1]+" "+days;
+  grid.innerHTML="";
+  const lead=dowOf(y,m,1);
+  for(let i=0;i<lead;i++){const b=document.createElement("div");b.className="blank";grid.appendChild(b);}
+  for(let d=1;d<=days;d++){
+    const k=key(y,m,d),box=document.createElement("div");
+    box.className="daybox";box.dataset.key=k;
+    if(today&&today.y===y&&today.m===m&&today.d===d)box.classList.add("today");
+    const badges=document.createElement("div");badges.className="badges";
+    badges.innerHTML='<span class="jnum">'+pad3(jdnOf(y,m,d))+'</span><span class="gnum">'+MABBR[m-1]+" "+d+"</span>";
+    const cardsDiv=document.createElement("div");cardsDiv.className="cards";
+    const arr=store[k]||[];sortDay(arr);
+    const pos=layout(arr.length);
+    arr.forEach((e,i)=>{
+      if(i>=MAX_PER_DAY)return;
+      const p=pos[i],c=document.createElement("div");
+      c.className="card s"+p.s+" jewel-"+e.jewel;
+      if(e.prio){c.classList.add("prio");c.style.setProperty("--pc",e.prioC||"#e42525");}
+      c.style.left=p.x+"px";c.style.top=p.y+"px";c.style.width=p.s+"px";c.style.height=p.s+"px";
+      c.dataset.key=k;c.dataset.id=e.id;
+      const t=fmtTime(e.time);
+      c.innerHTML='<div class="ct"></div>'+(t?'<div class="tm"></div>':'')+
+        '<button class="detbtn" title="Full details">▸</button>';
+      c.querySelector(".ct").textContent=cardTitle(e);
+      if(t)c.querySelector(".tm").textContent=t;
+      c.addEventListener("click",ev=>{
+        ev.stopPropagation();
+        if(document.body.classList.contains("bej")||p.s===16)openDetails(k,e.id);
+      });
+      c.querySelector(".detbtn").addEventListener("click",ev=>{ev.stopPropagation();openDetails(k,e.id);});
+      /* bejeweled tooltip */
+      c.addEventListener("mouseenter",ev=>showTip(ev,k,e.id));
+      c.addEventListener("mousemove",moveTip);
+      c.addEventListener("mouseleave",hideTip);
+      c.addEventListener("touchstart",ev=>{showTip(ev.touches[0],k,e.id);setTimeout(hideTip,2200);},{passive:true});
+      cardsDiv.appendChild(c);
+    });
+    box.appendChild(cardsDiv);box.appendChild(badges);
+    box.addEventListener("click",()=>{
+      if((store[k]||[]).length>=MAX_PER_DAY){alert("This day box is full ("+MAX_PER_DAY+" entries).");return;}
+      openEntry(k,null);
+    });
+    grid.appendChild(box);
+  }
+}
+
+/* ================= year chart view ================= */
+const chartWrap=document.getElementById("chartWrap");
+let chartMode=false;
+function renderChart(){
+  const y=view.y,total=isLeap(y)?366:365;
+  document.getElementById("mTitle").innerHTML='Julian Date Chart <span class="yr">'+y+"</span>";
+  document.getElementById("gSpan").textContent="Julian dates 001 – "+total+
+    " ("+total+" days) · click a box to add or view a day's entries";
+  let h='<table class="jchart"><tr><th class="dayth">Day</th>';
+  for(let m=1;m<=12;m++)h+="<th>"+MABBR[m-1]+"</th>";
+  h+="</tr>";
+  for(let d=1;d<=31;d++){
+    h+='<tr><td class="dayhdr">'+d+"</td>";
+    for(let m=1;m<=12;m++){
+      if(d>daysInMonth(y,m)){h+='<td class="void"></td>';continue;}
+      const k=key(y,m,d),arr=store[k]||[];
+      let cls="cell";
+      if(today&&today.y===y&&today.m===m&&today.d===d)cls+=" tday";
+      const pr=arr.find(e=>e.prio);
+      if(pr)cls+=" haspr";
+      h+='<td class="'+cls+'" data-m="'+m+'" data-d="'+d+'"'+
+        (pr?' style="--pcdot:'+pr.prioC+'"':'')+
+        ' title="'+MABBR[m-1]+" "+d+", "+y+'">'+jdnOf(y,m,d)+
+        (arr.length?'<span class="cnt">'+arr.length+"</span>":"")+"</td>";
+    }
+    h+="</tr>";
+  }
+  h+="</table>";
+  chartWrap.innerHTML=h;
+  chartWrap.querySelectorAll("td.cell").forEach(td=>{
+    td.addEventListener("click",()=>{
+      const m=Number(td.dataset.m),d=Number(td.dataset.d),k=key(view.y,m,d);
+      view.m=m;
+      const arr=store[k]||[];
+      if(arr.length===1){openDetails(k,arr[0].id);return;}
+      if(arr.length>1){ /* jump into month view to see the day's cards */
+        setMode(false);draw();return;
+      }
+      openEntry(k,null);
+    });
+  });
+}
+function setMode(chart){
+  chartMode=chart;
+  document.body.classList.toggle("chart",chart);
+  document.getElementById("chartBtn").textContent=chart?"▤ Month View":"▦ Year Chart";
+}
+function draw(){chartMode?renderChart():render();}
+
+/* ================= tooltip (Bejeweled) ================= */
+const tip=document.getElementById("tip");
+function findEntry(k,id){return (store[k]||[]).find(e=>e.id===id);}
+function showTip(ev,k,id){
+  if(!document.body.classList.contains("bej"))return;
+  const e=findEntry(k,id);if(!e)return;
+  const p=parseKey(k),t=fmtTime(e.time);
+  tip.innerHTML="<b></b><br>"+e.what+" · "+e.type+"<br>JD "+pad3(jdnOf(p.y,p.m,p.d))+
+    " · "+MABBR[p.m-1]+" "+p.d+(t?" · "+t:"");
+  tip.querySelector("b").textContent=cardTitle(e);
+  tip.style.display="block";moveTip(ev);
+}
+function moveTip(ev){if(tip.style.display!=="block")return;
+  let x=ev.clientX+14,yv=ev.clientY+14;
+  if(x+tip.offsetWidth>innerWidth-8)x=ev.clientX-tip.offsetWidth-10;
+  if(yv+tip.offsetHeight>innerHeight-8)yv=ev.clientY-tip.offsetHeight-10;
+  tip.style.left=x+"px";tip.style.top=yv+"px";}
+function hideTip(){tip.style.display="none";}
+
+/* ================= entry modal ================= */
+const entryOv=document.getElementById("entryOv");
+const fWhat=document.getElementById("fWhat"),fType=document.getElementById("fType"),
+      fDate=document.getElementById("fDate"),fTime=document.getElementById("fTime"),
+      fDesc=document.getElementById("fDesc"),fPrio=document.getElementById("fPrio"),
+      fPrioC=document.getElementById("fPrioC");
+function fillWhat(){fWhat.innerHTML="";Object.keys(WHAT_TYPES).forEach(w=>{
+  const o=document.createElement("option");o.value=o.textContent=w;fWhat.appendChild(o);});}
+function fillType(what,sel){fType.innerHTML="";(WHAT_TYPES[what]||["General"]).forEach(t=>{
+  const o=document.createElement("option");o.value=o.textContent=t;fType.appendChild(o);});
+  if(sel&&WHAT_TYPES[what].includes(sel))fType.value=sel;}
+function fillDate(selDay){fDate.innerHTML="";const days=daysInMonth(view.y,view.m);
+  for(let d=1;d<=days;d++){
+    const o=document.createElement("option");o.value=d;
+    o.textContent="JD "+pad3(jdnOf(view.y,view.m,d))+"  —  "+MABBR[view.m-1]+" "+d;
+    fDate.appendChild(o);}
+  fDate.value=selDay;}
+fWhat.addEventListener("change",()=>fillType(fWhat.value));
+
+function openEntry(k,id){
+  const p=parseKey(k);editing=null;
+  fillWhat();
+  if(id!=null){ /* edit */
+    const e=findEntry(k,id);if(!e)return;
+    editing={key:k,id:id};
+    document.getElementById("entryTitle").textContent="Edit Entry";
+    fWhat.value=e.what;fillType(e.what,e.type);fillDate(p.d);
+    fTime.value=e.time||"";fDesc.value=e.desc||"";
+    fPrio.checked=!!e.prio;fPrioC.value=e.prioC||"#e42525";
+  }else{ /* defaults */
+    document.getElementById("entryTitle").textContent="New Entry";
+    fWhat.value="Appointment";fillType("Appointment","Medical");fillDate(p.d);
+    fTime.value="";fDesc.value="";fPrio.checked=false;fPrioC.value="#e42525";
+  }
+  document.getElementById("entrySub").textContent=
+    "Julian date "+pad3(jdnOf(p.y,p.m,p.d))+" · "+MABBR[p.m-1]+" "+p.d+", "+p.y+" (Gregorian)";
+  entryOv.classList.add("open");fDesc.focus();
+}
+document.getElementById("entryCancel").addEventListener("click",()=>entryOv.classList.remove("open"));
+document.getElementById("entrySave").addEventListener("click",()=>{
+  const d=Number(fDate.value),newKey=key(view.y,view.m,d);
+  const data={what:fWhat.value,type:fType.value,time:fTime.value,
+    desc:fDesc.value.trim(),prio:fPrio.checked,prioC:fPrioC.value};
+  if(editing){
+    const arr=store[editing.key]||[],idx=arr.findIndex(e=>e.id===editing.id);
+    if(idx>-1){
+      const e=arr[idx];Object.assign(e,data);
+      if(newKey!==editing.key){
+        if((store[newKey]||[]).length>=MAX_PER_DAY){alert("Target day is full.");return;}
+        arr.splice(idx,1);(store[newKey]=store[newKey]||[]).push(e);
+        if(!arr.length)delete store[editing.key];
+      }
+    }
+  }else{
+    if((store[newKey]||[]).length>=MAX_PER_DAY){alert("That day is full ("+MAX_PER_DAY+" entries).");return;}
+    (store[newKey]=store[newKey]||[]).push(Object.assign({id:nextId++,
+      jewel:JEWELS[(nextId+d)%JEWELS.length]},data));
+  }
+  entryOv.classList.remove("open");draw();
+});
+
+/* ================= details modal ================= */
+const detOv=document.getElementById("detOv");
+let detRef=null;
+function openDetails(k,id){
+  const e=findEntry(k,id);if(!e)return;
+  detRef={key:k,id:id};
+  const p=parseKey(k),t=fmtTime(e.time);
+  document.getElementById("detTitle").textContent=cardTitle(e);
+  document.getElementById("detSub").textContent=t?("at "+t):"";
+  document.getElementById("dWhat").textContent=e.what;
+  document.getElementById("dType").textContent=e.type;
+  document.getElementById("dJul").textContent="JD "+pad3(jdnOf(p.y,p.m,p.d))+" of "+p.y;
+  document.getElementById("dGreg").textContent=MABBR[p.m-1]+" "+p.d+", "+p.y;
+  document.getElementById("dTime").textContent=t||"—";
+  document.getElementById("dDesc").textContent=e.desc||"—";
+  document.getElementById("dPrio").innerHTML=e.prio?
+    ('<span class="prioswatch" style="background:'+e.prioC+'"></span>Blinking border'):"No";
+  detOv.classList.add("open");
+}
+document.getElementById("detClose").addEventListener("click",()=>detOv.classList.remove("open"));
+document.getElementById("detEdit").addEventListener("click",()=>{
+  detOv.classList.remove("open");if(detRef)openEntry(detRef.key,detRef.id);});
+document.getElementById("detDelete").addEventListener("click",()=>{
+  if(!detRef)return;
+  if(!confirm("Delete this entry?"))return;
+  const arr=store[detRef.key]||[],i=arr.findIndex(e=>e.id===detRef.id);
+  if(i>-1)arr.splice(i,1);if(!arr.length)delete store[detRef.key];
+  detOv.classList.remove("open");draw();
+});
+[entryOv,detOv].forEach(ov=>ov.addEventListener("click",ev=>{if(ev.target===ov)ov.classList.remove("open");}));
+
+/* ================= nav / mode / save-load ================= */
+document.getElementById("prevBtn").addEventListener("click",()=>{
+  if(chartMode){view.y--;}else{view.m--;if(view.m<1){view.m=12;view.y--;}}draw();});
+document.getElementById("nextBtn").addEventListener("click",()=>{
+  if(chartMode){view.y++;}else{view.m++;if(view.m>12){view.m=1;view.y++;}}draw();});
+document.getElementById("todayBtn").addEventListener("click",()=>{view={y:today.y,m:today.m};draw();});
+document.getElementById("chartBtn").addEventListener("click",()=>{setMode(!chartMode);draw();});
+document.getElementById("bejBtn").addEventListener("click",function(){
+  document.body.classList.toggle("bej");this.classList.toggle("on");hideTip();});
+document.getElementById("saveBtn").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify({nextId:nextId,store:store},null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="julian-calendar-entries.json";a.click();URL.revokeObjectURL(a.href);});
+document.getElementById("loadInput").addEventListener("change",function(){
+  const f=this.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);
+    if(d&&d.store){store=d.store;nextId=d.nextId||1;draw();}
+    else alert("Unrecognized file format.");}
+    catch(e){alert("Could not read that file.");}};
+  r.readAsText(f);this.value="";});
+
+/* ================= voice entry ================= */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+const NUMWORDS={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
+  eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,
+  eighteen:18,nineteen:19,twenty:20,"twenty one":21,"twenty two":22,"twenty three":23,
+  "twenty four":24,"twenty five":25,"twenty six":26,"twenty seven":27,"twenty eight":28,
+  "twenty nine":29,thirty:30,"thirty one":31,
+  first:1,second:2,third:3,fourth:4,fifth:5,sixth:6,seventh:7,eighth:8,ninth:9,tenth:10,
+  eleventh:11,twelfth:12,thirteenth:13,fourteenth:14,fifteenth:15,sixteenth:16,
+  seventeenth:17,eighteenth:18,nineteenth:19,twentieth:20,"twenty first":21,
+  "twenty second":22,"twenty third":23,"twenty fourth":24,"twenty fifth":25,
+  "twenty sixth":26,"twenty seventh":27,"twenty eighth":28,"twenty ninth":29,
+  thirtieth:30,"thirty first":31};
+function fromDoy(y,n){const tot=isLeap(y)?366:365;n=Math.min(Math.max(1,n),tot);
+  let m=1;while(n>daysInMonth(y,m)){n-=daysInMonth(y,m);m++;}return {m:m,d:n};}
+function listen(btn,cb){
+  if(!SR){alert("Speech recognition isn't available in this browser.\n\nIt works in Chrome and Edge and uses the browser's built-in speech service, which requires an internet connection. Firefox does not support it.");return;}
+  const rec=new SR();rec.lang="en-US";rec.interimResults=false;rec.maxAlternatives=1;
+  btn.classList.add("listening");
+  rec.onresult=e=>cb(e.results[0][0].transcript);
+  rec.onerror=e=>{if(e.error==="not-allowed")alert("Microphone access was blocked. Allow it in the browser's site permissions.");};
+  rec.onend=()=>btn.classList.remove("listening");
+  rec.start();
+}
+function parseVoice(raw){
+  let s=" "+raw.toLowerCase().replace(/[.,!?]/g," ").replace(/\s+/g," ")+" ";
+  const out={what:"Appointment",type:"Medical",time:"",desc:"",m:today.m,d:today.d};
+  /* what */
+  let whatSpoken=false;
+  for(const w of Object.keys(WHAT_TYPES)){
+    const kw=w.toLowerCase().split("/")[0];
+    if(s.includes(" "+kw)){out.what=w;whatSpoken=true;s=s.replace(" "+kw,"");break;}
+  }
+  /* type (within chosen what) */
+  out.type=WHAT_TYPES[out.what][0];
+  for(const t of WHAT_TYPES[out.what]){
+    const kt=t.toLowerCase();
+    if(s.includes(" "+kt+" ")){out.type=t;
+      /* keep the word in the description unless a what-keyword was spoken,
+         so "physical therapy" stays intact */
+      if(whatSpoken)s=s.replace(" "+kt+" "," ");
+      break;}
+  }
+  /* time: "at 9", "at 2:30 pm", "at 1430" */
+  let tm=s.match(/ at (\d{1,2})[:.]?(\d{2})? ?(am|a m|pm|p m)?/);
+  if(tm){
+    let h=Number(tm[1]),mi=tm[2]?Number(tm[2]):0;const ap=(tm[3]||"").replace(" ","");
+    if(ap==="pm"&&h<12)h+=12;if(ap==="am"&&h===12)h=0;
+    if(!ap&&h>=1&&h<=6)h+=12; /* bare 1–6 defaults to afternoon */
+    if(h<24&&mi<60){out.time=String(h).padStart(2,"0")+":"+String(mi).padStart(2,"0");}
+    s=s.replace(tm[0]," ");
+  }
+  /* date: julian "day 225", month+day, today/tomorrow */
+  let dm=s.match(/ (?:julian(?: date| day)?|day) (\d{1,3}) /);
+  if(dm){const r=fromDoy(today.y,Number(dm[1]));out.m=r.m;out.d=r.d;s=s.replace(dm[0]," ");}
+  else{
+    for(let m=1;m<=12;m++){
+      const nm=MON[m-1].toLowerCase();
+      let md=s.match(new RegExp(" "+nm+" (\\d{1,2})(?:st|nd|rd|th)? "));
+      if(!md){ /* spoken-word day, e.g. "august twenty third" */
+        for(const w of Object.keys(NUMWORDS).sort((a,b)=>b.length-a.length)){
+          const re=new RegExp(" "+nm+" "+w+"(?:st|nd|rd|th)? ");
+          if(re.test(s)){md=[s.match(re)[0],String(NUMWORDS[w])];break;}
+        }
+      }
+      if(md){out.m=m;out.d=Math.min(Number(md[1]),daysInMonth(today.y,m));s=s.replace(md[0]," ");break;}
+    }
+    if(s.includes(" tomorrow ")){
+      const t2=new Date(today.y,today.m-1,today.d+1);
+      out.m=t2.getMonth()+1;out.d=t2.getDate();s=s.replace(" tomorrow "," ");
+    }else s=s.replace(" today "," ");
+  }
+  /* description: residue minus filler */
+  s=s.replace(/\b(add|an|a|the|new|entry|schedule|set|for|on|create|please|to|my)\b/g," ")
+     .replace(/\s+/g," ").trim();
+  out.desc=s.split(" ").map(w=>w?w[0].toUpperCase()+w.slice(1):"").join(" ").slice(0,48).trim();
+  return out;
+}
+document.getElementById("voiceBtn").addEventListener("click",function(){
+  listen(this,t=>{
+    const p=parseVoice(t);
+    view.y=today.y;view.m=p.m;
+    if(chartMode){setMode(false);}
+    draw();
+    const k=key(today.y,p.m,p.d);
+    if((store[k]||[]).length>=MAX_PER_DAY){alert("That day is full ("+MAX_PER_DAY+" entries).");return;}
+    openEntry(k,null);
+    fWhat.value=p.what;fillType(p.what,p.type);
+    if(p.time)fTime.value=p.time;
+    fDesc.value=p.desc;
+    document.getElementById("entryTitle").textContent='Voice Entry — "'+t+'"';
+  });
+});
+document.getElementById("descMic").addEventListener("click",function(){
+  listen(this,t=>{
+    t=t.trim();
+    fDesc.value=((fDesc.value?fDesc.value+" ":"")+
+      t[0].toUpperCase()+t.slice(1)).slice(0,48);
+  });
+});
+
+/* ================= init ================= */
+(function(){
+  const now=new Date();
+  today={y:now.getFullYear(),m:now.getMonth()+1,d:now.getDate()};
+  view={y:today.y,m:today.m};
+  render();
+})();
+</script>
+</body>
+</html>
