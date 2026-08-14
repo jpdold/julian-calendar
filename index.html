@@ -162,6 +162,13 @@ table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
 .dl dt{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#6b6f76;padding-top:2px}
 .dl dd{margin:0}
 .prioswatch{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+/* voice command prompt inside the entry modal */
+.vcstatus{display:none;margin-top:14px;padding:9px 11px;border:1px solid var(--today);border-radius:5px;
+  background:#eef3fe;color:var(--ink);font-size:12.5px;line-height:1.45}
+.vcstatus.on{display:block}
+.vcstatus b{display:inline-block;min-width:7px}
+.vcdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e42525;margin-right:6px;
+  vertical-align:0;animation:micpulse 1s infinite}
 
 /* ---------- phone: fit the year chart to the screen ---------- */
 /* 12 month columns + a day column have to share the viewport, so the cells are
@@ -207,7 +214,7 @@ table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
     <button id="saveBtn">Save JSON</button>
     <label class="filebtn">Load JSON<input type="file" id="loadInput" accept=".json" hidden></label>
   </div>
-  <div class="hint" id="hint">Click any empty area of a day box to add an entry. Entries save automatically in this browser — use Save JSON for a backup or to carry them to another device, Load JSON to restore. Voice Entry needs Chrome/Edge with internet (browser speech service) and mic permission.</div>
+  <div class="hint" id="hint">Click any empty area of a day box to add an entry. Entries save automatically in this browser — use Save JSON for a backup or to carry them to another device, Load JSON to restore. Voice Entry: press, speak the whole entry (&ldquo;medical appointment, two thirty pm at the medical clinic&rdquo;), and two beeps mean it parsed — then say &ldquo;set priority&rdquo; for a blue border and &ldquo;confirm&rdquo; to save. Needs Chrome/Edge with internet (browser speech service) and mic permission.</div>
 </header>
 
 <div class="wrap">
@@ -230,6 +237,12 @@ table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
     <div class="frow"><label for="fType">Type</label><select id="fType"></select></div>
     <div class="frow"><label for="fDate">Date (this month)</label><select id="fDate"></select></div>
     <div class="frow"><label for="fTime">Time</label><input type="time" id="fTime"></div>
+    <div class="frow"><label for="fPlace">Place</label>
+      <div class="descwrap">
+        <input type="text" id="fPlace" maxlength="48" placeholder="e.g. Medical Clinic">
+        <button type="button" class="micbtn" id="placeMic" title="Dictate place">🎤</button>
+      </div>
+    </div>
     <div class="frow"><label for="fDesc">Description (short)</label>
       <div class="descwrap">
         <input type="text" id="fDesc" maxlength="48" placeholder="e.g. Physical Therapy">
@@ -240,6 +253,7 @@ table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
       <label class="chk"><input type="checkbox" id="fPrio"> Priority (blinking border)</label>
       <input type="color" id="fPrioC" value="#e42525" title="Priority border color">
     </div>
+    <div class="vcstatus" id="vcStatus"></div>
     <div class="mbtns">
       <button class="primary" id="entrySave">Submit</button>
       <button id="entryCancel">Cancel</button>
@@ -255,6 +269,7 @@ table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
     <dl class="dl">
       <dt>What</dt><dd id="dWhat"></dd>
       <dt>Type</dt><dd id="dType"></dd>
+      <dt>Place</dt><dd id="dPlace"></dd>
       <dt>Julian date</dt><dd id="dJul"></dd>
       <dt>Gregorian</dt><dd id="dGreg"></dd>
       <dt>Time</dt><dd id="dTime"></dd>
@@ -508,6 +523,8 @@ function buildDayForm(body,arr){
     '<div class="frow"><label for="dpWhat">What</label><select id="dpWhat"></select></div>'+
     '<div class="frow"><label for="dpType">Type</label><select id="dpType"></select></div>'+
     '<div class="frow"><label for="dpTime">Time</label><input type="time" id="dpTime"></div>'+
+    '<div class="frow"><label for="dpPlace">Place</label>'+
+    '<input type="text" id="dpPlace" maxlength="48" placeholder="e.g. Medical Clinic"></div>'+
     '<div class="frow"><label for="dpDesc">Description (short)</label>'+
     '<input type="text" id="dpDesc" maxlength="48" placeholder="e.g. Physical Therapy"></div>'+
     '<div class="frow inline"><label class="chk"><input type="checkbox" id="dpPrio"> Priority</label>'+
@@ -528,6 +545,7 @@ function buildDayForm(body,arr){
     if(cur.length>=MAX_PER_DAY){alert("That day is full ("+MAX_PER_DAY+" entries).");return;}
     (store[dp.k]=cur).push({id:nextId++,jewel:JEWELS[(nextId+dp.d)%JEWELS.length],
       what:w.value,type:t.value,time:body.querySelector("#dpTime").value,
+      place:body.querySelector("#dpPlace").value.trim(),
       desc:body.querySelector("#dpDesc").value.trim(),
       prio:body.querySelector("#dpPrio").checked,
       prioC:body.querySelector("#dpPrioC").value});
@@ -572,6 +590,7 @@ function hideTip(){tip.style.display="none";}
 const entryOv=document.getElementById("entryOv");
 const fWhat=document.getElementById("fWhat"),fType=document.getElementById("fType"),
       fDate=document.getElementById("fDate"),fTime=document.getElementById("fTime"),
+      fPlace=document.getElementById("fPlace"),
       fDesc=document.getElementById("fDesc"),fPrio=document.getElementById("fPrio"),
       fPrioC=document.getElementById("fPrioC");
 function fillWhat(){fWhat.innerHTML="";Object.keys(WHAT_TYPES).forEach(w=>{
@@ -589,27 +608,30 @@ fWhat.addEventListener("change",()=>fillType(fWhat.value));
 
 function openEntry(k,id){
   const p=parseKey(k);editing=null;
+  stopVoiceCommands();   /* any prior voice session doesn't own this modal */
   fillWhat();
   if(id!=null){ /* edit */
     const e=findEntry(k,id);if(!e)return;
     editing={key:k,id:id};
     document.getElementById("entryTitle").textContent="Edit Entry";
     fWhat.value=e.what;fillType(e.what,e.type);fillDate(p.d);
-    fTime.value=e.time||"";fDesc.value=e.desc||"";
+    fTime.value=e.time||"";fPlace.value=e.place||"";fDesc.value=e.desc||"";
     fPrio.checked=!!e.prio;fPrioC.value=e.prioC||"#e42525";
   }else{ /* defaults */
     document.getElementById("entryTitle").textContent="New Entry";
     fWhat.value="Appointment";fillType("Appointment","Medical");fillDate(p.d);
-    fTime.value="";fDesc.value="";fPrio.checked=false;fPrioC.value="#e42525";
+    fTime.value="";fPlace.value="";fDesc.value="";fPrio.checked=false;fPrioC.value="#e42525";
   }
   document.getElementById("entrySub").textContent=
     "Julian date "+pad3(jdnOf(p.y,p.m,p.d))+" · "+MABBR[p.m-1]+" "+p.d+", "+p.y+" (Gregorian)";
   entryOv.classList.add("open");fDesc.focus();
 }
-document.getElementById("entryCancel").addEventListener("click",()=>entryOv.classList.remove("open"));
+document.getElementById("entryCancel").addEventListener("click",()=>{
+  stopVoiceCommands();entryOv.classList.remove("open");});
 document.getElementById("entrySave").addEventListener("click",()=>{
+  stopVoiceCommands();
   const d=Number(fDate.value),newKey=key(view.y,view.m,d);
-  const data={what:fWhat.value,type:fType.value,time:fTime.value,
+  const data={what:fWhat.value,type:fType.value,time:fTime.value,place:fPlace.value.trim(),
     desc:fDesc.value.trim(),prio:fPrio.checked,prioC:fPrioC.value};
   if(editing){
     const arr=store[editing.key]||[],idx=arr.findIndex(e=>e.id===editing.id);
@@ -640,6 +662,7 @@ function openDetails(k,id){
   document.getElementById("detSub").textContent=t?("at "+t):"";
   document.getElementById("dWhat").textContent=e.what;
   document.getElementById("dType").textContent=e.type;
+  document.getElementById("dPlace").textContent=e.place||"—";
   document.getElementById("dJul").textContent="JD "+pad3(jdnOf(p.y,p.m,p.d))+" of "+p.y;
   document.getElementById("dGreg").textContent=MABBR[p.m-1]+" "+p.d+", "+p.y;
   document.getElementById("dTime").textContent=t||"—";
@@ -658,7 +681,10 @@ document.getElementById("detDelete").addEventListener("click",()=>{
   if(i>-1)arr.splice(i,1);if(!arr.length)delete store[detRef.key];
   detOv.classList.remove("open");draw();
 });
-[entryOv,detOv].forEach(ov=>ov.addEventListener("click",ev=>{if(ev.target===ov)ov.classList.remove("open");}));
+[entryOv,detOv].forEach(ov=>ov.addEventListener("click",ev=>{
+  if(ev.target!==ov)return;
+  if(ov===entryOv)stopVoiceCommands();
+  ov.classList.remove("open");}));
 
 /* ================= nav / mode / save-load ================= */
 document.getElementById("prevBtn").addEventListener("click",()=>{
@@ -733,14 +759,75 @@ function listen(btn,cb){
   if(!SR){alert("Speech recognition isn't available in this browser.\n\nIt works in Chrome and Edge and uses the browser's built-in speech service, which requires an internet connection. Firefox does not support it.");return;}
   const rec=new SR();rec.lang="en-US";rec.interimResults=false;rec.maxAlternatives=1;
   btn.classList.add("listening");
-  rec.onresult=e=>cb(e.results[0][0].transcript);
+  /* stop before handing off: the command phase reopens the mic right after */
+  rec.onresult=e=>{try{rec.stop();}catch(x){}cb(e.results[0][0].transcript);};
   rec.onerror=e=>{if(e.error==="not-allowed")alert("Microphone access was blocked. Allow it in the browser's site permissions.");};
   rec.onend=()=>btn.classList.remove("listening");
   rec.start();
 }
+/* hour/minute words. NUMWORDS covers 1–31; times also need round minute values. */
+const NUMX=Object.assign({},NUMWORDS,{forty:40,"forty five":45,fifty:50,"fifty five":55,
+  oh:0,zero:0,noon:12,midnight:0});
+const NUMRE=Object.keys(NUMX).sort((a,b)=>b.length-a.length).map(w=>w.replace(/ /g,"\\s+")).join("|");
+function numOf(x){
+  if(/^\d+$/.test(x))return Number(x);
+  const k=x.replace(/\s+/g," ").trim();
+  return Object.prototype.hasOwnProperty.call(NUMX,k)?NUMX[k]:null;
+}
+function ampm(x){return (x||"").replace(/[\s.]/g,"")||null;}
+function hhmm(h,mi,ap){
+  if(h==null||mi==null)return null;
+  if(ap==="pm"&&h<12)h+=12;
+  if(ap==="am"&&h===12)h=0;
+  if(!ap&&h>=1&&h<=6)h+=12;                /* bare 1–6 reads as afternoon */
+  if(h<0||h>23||mi<0||mi>59)return null;
+  return String(h).padStart(2,"0")+":"+String(mi).padStart(2,"0");
+}
+/* Tried in order; first match wins. `word` patterns cap the hour at 12 so stray
+   number words don't get read as a 24-hour time. */
+const TIMEPATS=[
+  {re:/ at (\d{1,2})[:.]?(\d{2})? ?(a\s?m|p\s?m)?(?= )/, get:m=>[+m[1],m[2]?+m[2]:0,ampm(m[3])]},
+  {re:/ (\d{1,2})[:.](\d{2}) ?(a\s?m|p\s?m)?(?= )/, get:m=>[+m[1],+m[2],ampm(m[3])]},
+  {re:/ (\d{1,2}) ?(a\s?m|p\s?m)(?= )/, get:m=>[+m[1],0,ampm(m[2])]},
+  {re:new RegExp(" half past ("+NUMRE+"|\\d{1,2}) ?(a\\s?m|p\\s?m)?(?= )"),
+   get:m=>[numOf(m[1]),30,ampm(m[2])], word:true},
+  {re:new RegExp(" quarter past ("+NUMRE+"|\\d{1,2}) ?(a\\s?m|p\\s?m)?(?= )"),
+   get:m=>[numOf(m[1]),15,ampm(m[2])], word:true},
+  {re:new RegExp(" quarter to ("+NUMRE+"|\\d{1,2}) ?(a\\s?m|p\\s?m)?(?= )"),
+   get:m=>[numOf(m[1])-1,45,ampm(m[2])], word:true},
+  {re:new RegExp(" ("+NUMRE+") ("+NUMRE+") ?(a\\s?m|p\\s?m)?(?= )"),
+   get:m=>[numOf(m[1]),numOf(m[2]),ampm(m[3])], word:true},
+  {re:new RegExp(" ("+NUMRE+") o\\s?clock ?(a\\s?m|p\\s?m)?(?= )"),
+   get:m=>[numOf(m[1]),0,ampm(m[2])], word:true},
+  /* spoken hour with no am/pm ("at four"); the literal "at" keeps it from
+     grabbing stray numbers, and it sits after the pair rule so "at two thirty" wins */
+  {re:new RegExp(" at ("+NUMRE+") ?(a\\s?m|p\\s?m)?(?= )"),
+   get:m=>[numOf(m[1]),0,ampm(m[2])], word:true},
+  {re:new RegExp(" ("+NUMRE+") ?(a\\s?m|p\\s?m)(?= )"),
+   get:m=>[numOf(m[1]),0,ampm(m[2])], word:true}
+];
+function matchTime(s){
+  for(const p of TIMEPATS){
+    const m=s.match(p.re);
+    if(!m)continue;
+    const v=p.get(m);
+    if(!v||v[0]==null||v[1]==null)continue;
+    if(p.word&&v[0]>12)continue;
+    const t=hhmm(v[0],v[1],v[2]);
+    if(t)return {time:t,text:m[0]};
+  }
+  return null;
+}
+function titleCase(x){
+  return x.split(" ").map(w=>w?w[0].toUpperCase()+w.slice(1):"").join(" ").replace(/\s+/g," ").trim();
+}
 function parseVoice(raw){
-  let s=" "+raw.toLowerCase().replace(/[.,!?]/g," ").replace(/\s+/g," ")+" ";
-  const out={what:"Appointment",type:"Medical",time:"",desc:"",m:today.m,d:today.d};
+  let s=" "+raw.toLowerCase()
+    .replace(/[.,!?]/g," ")
+    .replace(/['‘’]/g,"")        /* o'clock -> oclock */
+    .replace(/[-‐-―]/g," ")      /* two-thirty -> two thirty */
+    .replace(/\s+/g," ")+" ";
+  const out={what:"Appointment",type:"Medical",time:"",place:"",desc:"",m:today.m,d:today.d};
   /* what */
   let whatSpoken=false;
   for(const w of Object.keys(WHAT_TYPES)){
@@ -757,15 +844,8 @@ function parseVoice(raw){
       if(whatSpoken)s=s.replace(" "+kt+" "," ");
       break;}
   }
-  /* time: "at 9", "at 2:30 pm", "at 1430" */
-  let tm=s.match(/ at (\d{1,2})[:.]?(\d{2})? ?(am|a m|pm|p m)?/);
-  if(tm){
-    let h=Number(tm[1]),mi=tm[2]?Number(tm[2]):0;const ap=(tm[3]||"").replace(" ","");
-    if(ap==="pm"&&h<12)h+=12;if(ap==="am"&&h===12)h=0;
-    if(!ap&&h>=1&&h<=6)h+=12; /* bare 1–6 defaults to afternoon */
-    if(h<24&&mi<60){out.time=String(h).padStart(2,"0")+":"+String(mi).padStart(2,"0");}
-    s=s.replace(tm[0]," ");
-  }
+  /* Date runs before time: the word-time patterns would otherwise read
+     "august twenty third" as 20:03 and swallow the date. */
   /* date: julian "day 225", month+day, today/tomorrow */
   let dm=s.match(/ (?:julian(?: date| day)?|day) (\d{1,3}) /);
   if(dm){const r=fromDoy(today.y,Number(dm[1]));out.m=r.m;out.d=r.d;s=s.replace(dm[0]," ");}
@@ -786,14 +866,85 @@ function parseVoice(raw){
       out.m=t2.getMonth()+1;out.d=t2.getDate();s=s.replace(" tomorrow "," ");
     }else s=s.replace(" today "," ");
   }
+  /* time: digits ("at 9", "2:30 pm", "at 1430") or words ("two thirty pm") */
+  const tm=matchTime(s);
+  if(tm){out.time=tm.time;s=s.replace(tm.text," ");}
+  /* place: whatever trails a leftover "at"/"in" once the time is gone */
+  const pl=s.match(/ (?:at|in) (?:the |a |an )?([a-z0-9&' ]+?) *$/);
+  if(pl){out.place=titleCase(pl[1]).slice(0,48).trim();s=s.replace(pl[0]," ");}
   /* description: residue minus filler */
   s=s.replace(/\b(add|an|a|the|new|entry|schedule|set|for|on|create|please|to|my)\b/g," ")
      .replace(/\s+/g," ").trim();
-  out.desc=s.split(" ").map(w=>w?w[0].toUpperCase()+w.slice(1):"").join(" ").slice(0,48).trim();
+  out.desc=titleCase(s).slice(0,48).trim();
   return out;
 }
+/* ---- confirmation phase: beep, then listen for spoken commands ---- */
+const VOICE_PRIO="#1D5FE0";   /* voice priority is always the blue benchmark border */
+const vcStatus=document.getElementById("vcStatus");
+let vcStop=null,vcTimer=null;
+
+function setVc(html){vcStatus.innerHTML='<span class="vcdot"></span>'+html;}
+function stopVoiceCommands(){
+  if(vcTimer){clearTimeout(vcTimer);vcTimer=null;}
+  if(vcStop){vcStop();vcStop=null;}
+  vcStatus.classList.remove("on");vcStatus.innerHTML="";
+}
+/* two short beeps, synthesized so the page stays dependency-free */
+function beepTwice(){
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return;
+    const ctx=new AC();
+    [0,0.16].forEach(off=>{
+      const o=ctx.createOscillator(),g=ctx.createGain(),t0=ctx.currentTime+off;
+      o.type="sine";o.frequency.value=880;o.connect(g);g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.0001,t0);
+      g.gain.exponentialRampToValueAtTime(0.22,t0+0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+0.11);
+      o.start(t0);o.stop(t0+0.12);
+    });
+    setTimeout(()=>{try{ctx.close();}catch(x){}},700);
+  }catch(e){}
+}
+/* continuous recognition; the service stops itself on a pause, so restart until told to quit */
+function listenLoop(btn,onPhrase){
+  if(!SR)return null;
+  const rec=new SR();
+  rec.lang="en-US";rec.interimResults=false;rec.maxAlternatives=1;rec.continuous=true;
+  let dead=false;
+  rec.onresult=e=>{
+    for(let i=e.resultIndex;i<e.results.length;i++)
+      if(e.results[i].isFinal)onPhrase(e.results[i][0].transcript.toLowerCase().trim());
+  };
+  rec.onerror=e=>{if(e.error==="not-allowed"||e.error==="service-not-allowed")dead=true;};
+  rec.onend=()=>{if(dead){btn.classList.remove("listening");return;}try{rec.start();}catch(x){}};
+  btn.classList.add("listening");
+  try{rec.start();}catch(x){}
+  return ()=>{dead=true;try{rec.stop();}catch(x){}btn.classList.remove("listening");};
+}
+function voiceCommand(phrase){
+  if(/\bcancel\b|\bnever mind\b/.test(phrase)){
+    stopVoiceCommands();entryOv.classList.remove("open");return;}
+  if(/\bset priority\b|\bpriority\b/.test(phrase)){
+    fPrio.checked=true;fPrioC.value=VOICE_PRIO;
+    setVc('Priority set — blue border. Say <b>&ldquo;confirm&rdquo;</b> to save.');return;}
+  if(/\bconfirm\b/.test(phrase)){
+    document.getElementById("entrySave").click();  /* entrySave stops the loop */
+  }
+}
+function startVoiceCommands(btn){
+  stopVoiceCommands();
+  if(!SR)return;
+  vcStatus.classList.add("on");
+  setVc('Say <b>&ldquo;set priority&rdquo;</b> to flag it, then <b>&ldquo;confirm&rdquo;</b> to save. ' +
+        '(&ldquo;cancel&rdquo; discards)');
+  /* let the dictation recognizer release the mic before reopening it */
+  vcTimer=setTimeout(()=>{vcTimer=null;vcStop=listenLoop(btn,voiceCommand);},450);
+}
+
 document.getElementById("voiceBtn").addEventListener("click",function(){
-  listen(this,t=>{
+  const btn=this;
+  listen(btn,t=>{
     const p=parseVoice(t);
     view.y=today.y;view.m=p.m;
     if(chartMode){setMode(false);}
@@ -803,8 +954,17 @@ document.getElementById("voiceBtn").addEventListener("click",function(){
     openEntry(k,null);
     fWhat.value=p.what;fillType(p.what,p.type);
     if(p.time)fTime.value=p.time;
-    fDesc.value=p.desc;
+    fPlace.value=p.place;fDesc.value=p.desc;
     document.getElementById("entryTitle").textContent='Voice Entry — "'+t+'"';
+    beepTwice();                 /* parsed: the double beep hands over to commands */
+    startVoiceCommands(btn);
+  });
+});
+document.getElementById("placeMic").addEventListener("click",function(){
+  listen(this,t=>{
+    t=t.trim();
+    fPlace.value=((fPlace.value?fPlace.value+" ":"")+
+      t[0].toUpperCase()+t.slice(1)).slice(0,48);
   });
 });
 document.getElementById("descMic").addEventListener("click",function(){

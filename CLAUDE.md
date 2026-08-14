@@ -21,7 +21,7 @@ The underlying grid is proleptic Gregorian: `dowOf()` delegates to `new Date(y, 
 **State** is three module-level globals in the `<script>`: `store`, `nextId`, and `view`.
 
 - `store` maps a **Gregorian day key** `"y-m-d"` (built by `key()`, parsed by `parseKey()`) to an array of entries.
-- An entry is `{id, jewel, what, type, time, desc, prio, prioC}`. **The date is not stored on the entry** — it is the store key. Moving an entry to another day means splicing it out of one array and pushing it into another (see the `editing` branch of the entry-save handler), not mutating a field.
+- An entry is `{id, jewel, what, type, time, place, desc, prio, prioC}`. `place` was added later, so entries loaded from older JSON won't have it — read it as `e.place || ""`. **The date is not stored on the entry** — it is the store key. Moving an entry to another day means splicing it out of one array and pushing it into another (see the `editing` branch of the entry-save handler), not mutating a field.
 - `nextId` is a monotonic counter, and it is persisted alongside `store` so that reloaded data doesn't collide with newly created entries.
 
 **Rendering is full teardown, no diffing.** `draw()` dispatches to either `render()` (month grid) or `renderChart()` (year table) based on `chartMode`; both wipe their container with `innerHTML=""` and rebuild every node plus every listener. Consequence: **any mutation of `store` must end with a `draw()` call** or the screen goes stale, and nothing may hold a DOM reference across a redraw.
@@ -45,7 +45,16 @@ Three non-obvious constraints hold it together:
 
 **`WHAT_TYPES`** is the single taxonomy driving the What/Type dropdown pair *and* the voice parser, which iterates its keys. Adding a category makes it speakable automatically.
 
-**`parseVoice(raw)`** is a destructive-consume pipeline: it matches what → type → time → date in that order, deleting each match from the string, and whatever survives (minus a filler-word blocklist) becomes the description. **Order is load-bearing** — reordering the stages changes what lands in the description. Two deliberate quirks: a bare hour of 1–6 with no am/pm is assumed to be PM, and a matched *type* word is only stripped when a *what* word was also spoken, so "physical therapy" survives intact as a description.
+**`parseVoice(raw)`** is a destructive-consume pipeline: it matches what → type → **date → time** → place in that order, deleting each match from the string, and whatever survives (minus a filler-word blocklist) becomes the description. **Order is load-bearing** in two specific ways:
+
+- **Date must precede time.** The word-time patterns would otherwise read "august twenty third" as 20:03 and swallow the date.
+- **Place must follow time**, because it claims whatever trails a leftover "at"/"in" — so the time's own "at 9 am" has to be gone first.
+
+Times are matched by `TIMEPATS`, an ordered list tried first-match-wins, covering digits (`at 9`, `2:30 pm`, `at 1430`) and words (`two thirty pm`, `three o'clock`, `half past two`, `quarter to ten`, `at four`). Patterns flagged `word:true` cap the hour at 12 so stray number words can't be read as a 24-hour time. Two deliberate quirks survive from the original: a bare hour of 1–6 with no am/pm is assumed to be PM, and a matched *type* word is only stripped when a *what* word was also spoken, so "physical therapy" stays intact as a description.
+
+**Voice entry is a two-phase state machine.** Phase one is single-shot dictation via `listen()`, which parses the whole utterance and prefills the entry modal. Two synthesized beeps (`beepTwice()`, Web Audio — no asset files, keeping the page self-contained) mark the handover. Phase two is `listenLoop()`, a *continuous* recognizer that restarts itself in `onend` (the service stops on every pause) and matches spoken commands: "set priority" (forces `prioC` to `VOICE_PRIO`, the blue `#1D5FE0`, deliberately bypassing the colour picker), "confirm" (clicks `entrySave`), "cancel".
+
+Two things this depends on: `listen()` calls `rec.stop()` before invoking its callback, and `startVoiceCommands()` waits ~450 ms before opening the second recognizer — two `SpeechRecognition` instances contending for the mic will throw. Every path that closes the entry modal must call `stopVoiceCommands()`, or the loop keeps the mic open after the modal is gone.
 
 ## Persistence
 
