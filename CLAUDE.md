@@ -35,6 +35,14 @@ The underlying grid is proleptic Gregorian: `dowOf()` delegates to `new Date(y, 
 
 The sizes are physical: `--cell:144px` is 1.5 in at 96 dpi, so 72/48/16 are 0.75 in / 0.5 in / 0.1667 in. **`layout()`'s `s` values are coupled to CSS class names** — each card gets `class="card s{s}"`, and `.s144/.s72/.s48/.s16` carry the matching font sizes. Adding a new size tier requires edits in both places, and `.s16` additionally hides all text and renders a dot.
 
+**The chart day panel** (`#dayPanel`) is how the year chart is edited. Clicking a square expands it into a panel that is `position:fixed` and anchored to the square's `getBoundingClientRect()` — deliberately floating *over* the table so opening it never reflows or displaces a day square. An empty day opens straight into an inline entry form; a populated day lists its entries plus the remaining capacity. It replaced the old behavior where two-or-more entries kicked you out to the month grid.
+
+Three non-obvious constraints hold it together:
+
+- **The chart cell click sets `view.m`.** `openEntry`/`entrySave` build their day dropdown from `view.m`, so if it drifted, editing an entry from the panel would silently relocate it to whatever month was last viewed.
+- **Clicks inside the panel are stopped at `#dayPanel`, not tested with `contains()` at `document`.** Handlers like Add re-render the panel, which detaches `ev.target`; a `contains()` test on the way up would then report false and close the panel out from under the user. The event path is fixed at dispatch, so the panel's own listener still fires after the re-render.
+- **`draw()` calls `syncDayPanel()`**, which re-renders and re-anchors an open panel and closes it if the redraw left its context (month view, or a different year). Because `renderChart()` rebuilds every `<td>`, the panel re-finds its cell by `[data-m][data-d]` rather than holding a node reference.
+
 **`WHAT_TYPES`** is the single taxonomy driving the What/Type dropdown pair *and* the voice parser, which iterates its keys. Adding a category makes it speakable automatically.
 
 **`parseVoice(raw)`** is a destructive-consume pipeline: it matches what → type → time → date in that order, deleting each match from the string, and whatever survives (minus a filler-word blocklist) becomes the description. **Order is load-bearing** — reordering the stages changes what lands in the description. Two deliberate quirks: a bare hour of 1–6 with no am/pm is assumed to be PM, and a matched *type* word is only stripped when a *what* word was also spoken, so "physical therapy" survives intact as a description.

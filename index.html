@@ -112,6 +112,34 @@ table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
 .jchart td .cnt{position:absolute;top:0;right:2px;font-size:8px;line-height:1.4;color:#fff;background:var(--greg);border-radius:6px;padding:0 3px;min-width:10px}
 .jchart td.haspr::after{content:"";position:absolute;left:2px;top:3px;width:5px;height:5px;border-radius:50%;background:var(--pcdot,#e42525)}
 
+/* ---------- chart day panel ---------- */
+/* position:fixed so the panel floats over the chart: opening it never reflows
+   the table or displaces a single day square. */
+#dayPanel{position:fixed;z-index:60;width:296px;max-width:94vw;background:var(--card);
+  border:1px solid var(--card-edge);border-radius:7px;box-shadow:0 12px 34px rgba(0,0,0,.30);
+  display:none;font-size:13px}
+#dayPanel.open{display:block}
+.dphead{display:flex;align-items:baseline;gap:8px;padding:9px 11px;border-bottom:1px solid var(--card-edge)}
+.dpjd{font-family:Iowan Old Style,Palatino Linotype,Georgia,serif;font-weight:700;font-size:15px}
+.dpgreg{font-size:11px;color:var(--greg)}
+.dpclose{margin-left:auto;width:21px;height:21px;padding:0;line-height:1;font-size:12px;align-self:center}
+.dpbody{padding:10px 11px 12px;max-height:56vh;overflow:auto}
+.dprow{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 8px;margin-bottom:5px;
+  border:1px solid var(--card-edge);background:#fff;border-radius:4px;cursor:pointer;font:inherit;font-size:13px}
+.dprow:hover{border-color:var(--ink)}
+.dpdot{width:11px;height:11px;border-radius:50%;flex:none;
+  background:linear-gradient(135deg,var(--j3),var(--j1) 55%,var(--j2))}
+.dprow .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dprow .tm{color:#555;font-size:12px;flex:none}
+.dprow .pr{width:9px;height:9px;border-radius:2px;flex:none}
+.dpadd{display:block;width:100%;padding:9px;border:1px dashed var(--card-edge);background:transparent;
+  border-radius:4px;cursor:pointer;font:inherit;font-size:13px;color:#5a5f66}
+.dpadd:hover{border-color:var(--ink);color:var(--ink)}
+.dpfull{font-size:12px;color:#6b6f76;text-align:center;padding:8px}
+.dpbody .frow{margin-bottom:9px}
+.dpbtns{display:flex;gap:7px;margin-top:13px}
+.jchart td.dpopen{outline:3px solid var(--today);outline-offset:-3px;font-weight:700}
+
 #tip{position:fixed;z-index:200;background:var(--ink);color:#fff;font-size:12px;line-height:1.45;padding:7px 10px;border-radius:5px;pointer-events:none;display:none;max-width:230px;box-shadow:0 4px 14px rgba(0,0,0,.3)}
 #tip b{font-size:12.5px}
 
@@ -167,6 +195,8 @@ table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
 </div>
 
 <div id="chartWrap"></div>
+
+<div id="dayPanel"></div>
 
 <div id="tip"></div>
 
@@ -361,15 +391,13 @@ function renderChart(){
   h+="</table>";
   chartWrap.innerHTML=h;
   chartWrap.querySelectorAll("td.cell").forEach(td=>{
-    td.addEventListener("click",()=>{
-      const m=Number(td.dataset.m),d=Number(td.dataset.d),k=key(view.y,m,d);
+    td.addEventListener("click",ev=>{
+      ev.stopPropagation();            /* let the panel's outside-click handler ignore this */
+      const m=Number(td.dataset.m),d=Number(td.dataset.d);
+      /* openEntry/entrySave build their day list from view.m, so the edit path
+         would move an entry to the wrong month if this drifted */
       view.m=m;
-      const arr=store[k]||[];
-      if(arr.length===1){openDetails(k,arr[0].id);return;}
-      if(arr.length>1){ /* jump into month view to see the day's cards */
-        setMode(false);draw();return;
-      }
-      openEntry(k,null);
+      openDayPanel(m,d);
     });
   });
 }
@@ -378,7 +406,127 @@ function setMode(chart){
   document.body.classList.toggle("chart",chart);
   document.getElementById("chartBtn").textContent=chart?"▤ Month View":"▦ Year Chart";
 }
-function draw(){chartMode?renderChart():render();persist();}
+function draw(){chartMode?renderChart():render();persist();syncDayPanel();}
+
+/* ================= chart day panel ================= */
+/* Clicking a square in the year chart expands it into a panel anchored over the
+   chart. Empty day -> opens straight into the entry form; populated day -> lists
+   what's there plus the remaining space. Nothing in the table moves. */
+const dayPanel=document.getElementById("dayPanel");
+let dp=null;   /* {y,m,d,k,form} while open */
+
+function dpCell(){
+  return dp?chartWrap.querySelector('td.cell[data-m="'+dp.m+'"][data-d="'+dp.d+'"]'):null;
+}
+function openDayPanel(m,d){
+  if(dp&&dp.m===m&&dp.d===d){closeDayPanel();return;}   /* same square toggles shut */
+  const k=key(view.y,m,d);
+  dp={y:view.y,m:m,d:d,k:k,form:!(store[k]||[]).length};
+  renderDayPanel();anchorPanel();
+}
+function closeDayPanel(){
+  dp=null;dayPanel.classList.remove("open");dayPanel.innerHTML="";
+  chartWrap.querySelectorAll("td.dpopen").forEach(td=>td.classList.remove("dpopen"));
+}
+/* keep the panel truthful after any redraw; drop it if we left its context */
+function syncDayPanel(){
+  if(!dp)return;
+  if(!chartMode||view.y!==dp.y){closeDayPanel();return;}
+  renderDayPanel();anchorPanel();
+}
+function anchorPanel(){
+  if(!dp)return;
+  const td=dpCell();
+  if(!td){closeDayPanel();return;}
+  const r=td.getBoundingClientRect(),pw=dayPanel.offsetWidth,ph=dayPanel.offsetHeight;
+  let x=r.left+r.width/2-pw/2,y=r.bottom+8;
+  if(y+ph>innerHeight-8){const above=r.top-ph-8;y=above>=8?above:Math.max(8,innerHeight-ph-8);}
+  x=Math.min(Math.max(8,x),Math.max(8,innerWidth-pw-8));
+  dayPanel.style.left=x+"px";dayPanel.style.top=y+"px";
+}
+function renderDayPanel(){
+  if(!dp)return;
+  const arr=store[dp.k]||[];sortDay(arr);
+  dayPanel.innerHTML='<div class="dphead"><span class="dpjd">JD '+pad3(jdnOf(dp.y,dp.m,dp.d))+
+    '</span><span class="dpgreg">'+MABBR[dp.m-1]+" "+dp.d+", "+dp.y+
+    '</span><button class="dpclose" id="dpClose" aria-label="Close">✕</button></div>'+
+    '<div class="dpbody" id="dpBody"></div>';
+  dayPanel.querySelector("#dpClose").addEventListener("click",closeDayPanel);
+  const body=dayPanel.querySelector("#dpBody");
+  dp.form?buildDayForm(body,arr):buildDayList(body,arr);
+  dayPanel.classList.add("open");
+  chartWrap.querySelectorAll("td.dpopen").forEach(td=>td.classList.remove("dpopen"));
+  const td=dpCell();if(td)td.classList.add("dpopen");
+}
+function buildDayList(body,arr){
+  arr.forEach(e=>{
+    const b=document.createElement("button");
+    b.className="dprow jewel-"+e.jewel;
+    b.innerHTML='<span class="dpdot"></span><span class="t"></span>'+
+      (e.time?'<span class="tm"></span>':'')+(e.prio?'<span class="pr"></span>':'');
+    b.querySelector(".t").textContent=cardTitle(e);
+    if(e.time)b.querySelector(".tm").textContent=fmtTime(e.time);
+    if(e.prio)b.querySelector(".pr").style.background=e.prioC||"#e42525";
+    b.addEventListener("click",()=>openDetails(dp.k,e.id));
+    body.appendChild(b);
+  });
+  const free=MAX_PER_DAY-arr.length;
+  if(free>0){
+    const a=document.createElement("button");
+    a.className="dpadd";
+    a.textContent="+ add entry"+(arr.length?"   ·   "+free+" of "+MAX_PER_DAY+" free":"");
+    a.addEventListener("click",()=>{dp.form=true;renderDayPanel();anchorPanel();});
+    body.appendChild(a);
+  }else{
+    const f=document.createElement("div");f.className="dpfull";
+    f.textContent="Day is full ("+MAX_PER_DAY+" entries).";body.appendChild(f);
+  }
+}
+function buildDayForm(body,arr){
+  body.innerHTML=
+    '<div class="frow"><label for="dpWhat">What</label><select id="dpWhat"></select></div>'+
+    '<div class="frow"><label for="dpType">Type</label><select id="dpType"></select></div>'+
+    '<div class="frow"><label for="dpTime">Time</label><input type="time" id="dpTime"></div>'+
+    '<div class="frow"><label for="dpDesc">Description (short)</label>'+
+    '<input type="text" id="dpDesc" maxlength="48" placeholder="e.g. Physical Therapy"></div>'+
+    '<div class="frow inline"><label class="chk"><input type="checkbox" id="dpPrio"> Priority</label>'+
+    '<input type="color" id="dpPrioC" value="#e42525" title="Priority border color"></div>'+
+    '<div class="dpbtns"><button class="primary" id="dpSave">Add</button>'+
+    '<button id="dpCancel">'+(arr.length?"Back":"Cancel")+"</button></div>";
+  const w=body.querySelector("#dpWhat"),t=body.querySelector("#dpType");
+  Object.keys(WHAT_TYPES).forEach(x=>{
+    const o=document.createElement("option");o.value=o.textContent=x;w.appendChild(o);});
+  function fillT(){t.innerHTML="";(WHAT_TYPES[w.value]||["General"]).forEach(x=>{
+    const o=document.createElement("option");o.value=o.textContent=x;t.appendChild(o);});}
+  w.value="Appointment";fillT();
+  w.addEventListener("change",fillT);
+  body.querySelector("#dpCancel").addEventListener("click",()=>{
+    if(arr.length){dp.form=false;renderDayPanel();anchorPanel();}else closeDayPanel();});
+  body.querySelector("#dpSave").addEventListener("click",()=>{
+    const cur=store[dp.k]||[];
+    if(cur.length>=MAX_PER_DAY){alert("That day is full ("+MAX_PER_DAY+" entries).");return;}
+    (store[dp.k]=cur).push({id:nextId++,jewel:JEWELS[(nextId+dp.d)%JEWELS.length],
+      what:w.value,type:t.value,time:body.querySelector("#dpTime").value,
+      desc:body.querySelector("#dpDesc").value.trim(),
+      prio:body.querySelector("#dpPrio").checked,
+      prioC:body.querySelector("#dpPrioC").value});
+    dp.form=false;draw();   /* draw() persists, redraws the chart and re-syncs this panel */
+  });
+  body.querySelector("#dpDesc").focus();
+}
+/* Clicks inside the panel are never "outside". Stop them here rather than testing
+   dayPanel.contains() up at document: handlers like Add re-render the panel, which
+   detaches ev.target, so contains() would report false and close the panel. The
+   event path is fixed at dispatch, so this listener still fires after the rerender. */
+dayPanel.addEventListener("click",ev=>ev.stopPropagation());
+document.addEventListener("click",ev=>{
+  if(!dp)return;
+  if(ev.target.closest&&ev.target.closest(".overlay"))return;  /* modal use isn't "outside" */
+  closeDayPanel();
+});
+document.addEventListener("keydown",ev=>{if(ev.key==="Escape"&&dp)closeDayPanel();});
+addEventListener("resize",()=>{if(dp)anchorPanel();});
+chartWrap.addEventListener("scroll",()=>{if(dp)anchorPanel();});
 
 /* ================= tooltip (Bejeweled) ================= */
 const tip=document.getElementById("tip");
