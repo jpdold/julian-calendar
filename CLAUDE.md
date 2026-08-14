@@ -41,9 +41,13 @@ The sizes are physical: `--cell:144px` is 1.5 in at 96 dpi, so 72/48/16 are 0.75
 
 ## Persistence
 
-There is none. `store` lives only in memory, and a page refresh discards everything. The Save JSON / Load JSON buttons are the sole durable path, writing `{nextId, store}` to `julian-calendar-entries.json`; the loader accepts any object with a `store` property.
+`{nextId, store}` is mirrored into `localStorage` under `LS_KEY` (`"julian-calendar.v1"`) by `persist()`, called from `draw()` — the one choke point every mutation already passes through. `restore()` runs once in the init IIFE, before the first `render()`. **A new mutation path therefore needs no persistence code of its own, as long as it ends in `draw()`.**
 
-If asked to add `localStorage` or similar, note that every mutation site already funnels through `draw()`, which makes it the natural single place to hook a save.
+Save JSON / Load JSON remain the portable path and write the identical `{nextId, store}` shape, so a file and a storage payload are interchangeable.
+
+Both entry points go through `adopt(d)`, which validates the payload and then **reseeds `nextId` past the highest live `id`**. This matters because ids are the only handle `findEntry`/edit/delete have; a stale or hand-edited `nextId` would otherwise reissue a live id and make two entries indistinguishable.
+
+Storage failures (private windows, blocked site data, quota) are caught, and `lsFailed()` replaces the header hint with a warning exactly once rather than alerting repeatedly — the app keeps working in memory. Bump `LS_KEY` if the entry shape ever changes incompatibly; `restore()` treats an unparseable payload as "start empty" rather than throwing.
 
 ## Conventions
 

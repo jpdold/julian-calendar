@@ -158,7 +158,7 @@ table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
     <button id="saveBtn">Save JSON</button>
     <label class="filebtn">Load JSON<input type="file" id="loadInput" accept=".json" hidden></label>
   </div>
-  <div class="hint">Click any empty area of a day box to add an entry. Entries are held in memory — use Save JSON to keep them, Load JSON to restore. Voice Entry needs Chrome/Edge with internet (browser speech service) and mic permission.</div>
+  <div class="hint" id="hint">Click any empty area of a day box to add an entry. Entries save automatically in this browser — use Save JSON for a backup or to carry them to another device, Load JSON to restore. Voice Entry needs Chrome/Edge with internet (browser speech service) and mic permission.</div>
 </header>
 
 <div class="wrap">
@@ -378,7 +378,7 @@ function setMode(chart){
   document.body.classList.toggle("chart",chart);
   document.getElementById("chartBtn").textContent=chart?"▤ Month View":"▦ Year Chart";
 }
-function draw(){chartMode?renderChart():render();}
+function draw(){chartMode?renderChart():render();persist();}
 
 /* ================= tooltip (Bejeweled) ================= */
 const tip=document.getElementById("tip");
@@ -507,11 +507,43 @@ document.getElementById("saveBtn").addEventListener("click",()=>{
 document.getElementById("loadInput").addEventListener("change",function(){
   const f=this.files[0];if(!f)return;
   const r=new FileReader();
-  r.onload=()=>{try{const d=JSON.parse(r.result);
-    if(d&&d.store){store=d.store;nextId=d.nextId||1;draw();}
+  r.onload=()=>{try{
+    if(adopt(JSON.parse(r.result)))draw();
     else alert("Unrecognized file format.");}
     catch(e){alert("Could not read that file.");}};
   r.readAsText(f);this.value="";});
+
+/* ================= local persistence ================= */
+/* store + nextId are mirrored into localStorage on every draw(), which every
+   mutation already funnels through. Save/Load JSON remain the portable path. */
+const LS_KEY="julian-calendar.v1";
+let lsOk=true;
+function lsFailed(){
+  if(!lsOk)return;                /* warn once, never nag */
+  lsOk=false;
+  const h=document.getElementById("hint");
+  if(h)h.innerHTML='<b>Entries are not being saved.</b> This browser refused local storage '+
+    '(private window, blocked site data, or storage full). Use Save JSON before closing the tab.';
+}
+/* adopt a {nextId,store} payload from storage or from a loaded file */
+function adopt(d){
+  if(!d||typeof d.store!=="object"||!d.store)return false;
+  store=d.store;nextId=Number(d.nextId)||1;
+  let max=0;
+  Object.keys(store).forEach(k=>{(store[k]||[]).forEach(e=>{if(e.id>max)max=e.id;});});
+  if(nextId<=max)nextId=max+1;    /* never reissue an id that is already live */
+  return true;
+}
+function persist(){
+  try{localStorage.setItem(LS_KEY,JSON.stringify({nextId:nextId,store:store}));}
+  catch(e){lsFailed();}
+}
+function restore(){
+  let raw=null;
+  try{raw=localStorage.getItem(LS_KEY);}catch(e){lsFailed();return;}
+  if(!raw)return;
+  try{adopt(JSON.parse(raw));}catch(e){}   /* corrupt payload: start empty */
+}
 
 /* ================= voice entry ================= */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -619,6 +651,7 @@ document.getElementById("descMic").addEventListener("click",function(){
   const now=new Date();
   today={y:now.getFullYear(),m:now.getMonth()+1,d:now.getDate()};
   view={y:today.y,m:today.m};
+  restore();
   render();
 })();
 </script>
