@@ -163,6 +163,27 @@ table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
 .dl dd{margin:0}
 .prioswatch{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:5px}
 
+/* ---------- phone: fit the year chart to the screen ---------- */
+/* 12 month columns + a day column have to share the viewport, so the cells are
+   small by necessity. Width is bought back from body padding and the day column;
+   row height is spent generously since vertical space is cheap (the chart already
+   scrolls vertically) and a taller target is easier to hit accurately. */
+@media (max-width:780px){
+  body{padding:12px 8px 44px}
+  #chartWrap{max-width:100%;overflow-x:hidden}
+  table.jchart{table-layout:fixed;width:100%;margin:0}
+  .jchart th{min-width:0;width:7.75%;font-size:9px;letter-spacing:.02em;padding:5px 1px}
+  .jchart th.dayth{min-width:0;width:7%}
+  .jchart td{font-size:10px;padding:0 1px;height:32px}
+  .jchart td.dayhdr{font-size:10px}
+  .jchart td.cell{touch-action:manipulation}   /* no double-tap zoom stealing the tap */
+  .jchart td .cnt{font-size:7px;top:-1px;right:0;padding:0 2px;min-width:8px}
+  .jchart td.haspr::after{width:4px;height:4px;left:1px;top:2px}
+  .jchart td.tday,.jchart td.dpopen{outline-width:2px;outline-offset:-2px}
+  /* iOS zooms the page when a focused field is under 16px */
+  .frow select,.frow input[type=text],.frow input[type=time]{font-size:16px}
+}
+
 @media (prefers-reduced-motion:reduce){
   .card.prio,body.bej .card.prio{animation:none;box-shadow:inset 0 0 0 3px var(--pc)}
   body.bej .card::after{animation:none;display:none}
