@@ -45,7 +45,11 @@ button:focus-visible{outline:2px solid var(--today);outline-offset:2px}
 .badges{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:3px 4px;pointer-events:none;z-index:30}
 .jnum{font-family:Iowan Old Style,Palatino Linotype,Georgia,serif;font-size:16px;font-weight:700;line-height:1;background:rgba(236,233,226,.75);padding:1px 4px;border-radius:3px}
 .gnum{font-size:9px;color:var(--greg);background:rgba(236,233,226,.75);padding:2px 3px;border-radius:3px;letter-spacing:.03em}
-.cards{position:absolute;inset:0;z-index:10}
+/* layout() positions cards in a fixed 144px coordinate space, so rather than
+   rewrite that math for small screens the whole card layer is scaled. --k is
+   measured from a real day box by syncCellScale(); it is 1 at full size. */
+.cards{position:absolute;left:0;top:0;width:144px;height:144px;z-index:10;
+  transform:scale(var(--k,1));transform-origin:top left}
 
 /* ---------- entry title cards ---------- */
 .card{position:absolute;background:var(--card);border:1px solid var(--card-edge);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;cursor:default}
@@ -189,6 +193,26 @@ table.jchart{border-collapse:collapse;background:#fff;margin:0 auto}
   .jchart td.tday,.jchart td.dpopen{outline-width:2px;outline-offset:-2px}
   /* iOS zooms the page when a focused field is under 16px */
   .frow select,.frow input[type=text],.frow input[type=time]{font-size:16px}
+
+  /* month grid: seven columns fitted to the viewport. The boxes are square via
+     aspect-ratio and the card layer rides along on --k. */
+  header,.wrap{max-width:100%}
+  .dow,#grid{grid-template-columns:repeat(7,1fr);gap:2px}
+  .daybox,.blank{width:auto;height:auto;aspect-ratio:1}
+  .dow div{font-size:8px;letter-spacing:.06em;padding:3px 0}
+  .badges{padding:1px 2px}
+  .jnum{font-size:10px;padding:0 2px;border-radius:2px}
+  .gnum{font-size:7px;padding:0 2px;border-radius:2px}
+  .daybox.today{border-width:2px}
+  h1{font-size:26px}
+  .eyebrow,.gspan,.hint{font-size:10.5px}
+
+  /* selecting a day maximizes over the calendar instead of floating a dialog */
+  .overlay{align-items:stretch;justify-content:stretch}
+  .modal{width:100%;max-width:100%;height:100%;max-height:100%;border-radius:0;
+    padding:16px 16px 24px}
+  .mbtns{position:sticky;bottom:0;background:#fff;padding-top:10px;margin-top:18px}
+  .mbtns button{flex:1;padding:11px 12px}
 }
 
 @media (prefers-reduced-motion:reduce){
@@ -395,7 +419,16 @@ function render(){
     });
     grid.appendChild(box);
   }
+  syncCellScale();
 }
+/* Measure a real day box and expose cell/144 as --k so the card layer scales
+   with the grid. Skips a non-today box: its 4px border would skew the reading. */
+function syncCellScale(){
+  const b=grid.querySelector(".daybox:not(.today)")||grid.querySelector(".daybox");
+  const w=b?b.getBoundingClientRect().width:0;
+  if(w)document.documentElement.style.setProperty("--k",(w/144).toFixed(4));
+}
+addEventListener("resize",syncCellScale);
 
 /* ================= year chart view ================= */
 const chartWrap=document.getElementById("chartWrap");
@@ -947,8 +980,7 @@ document.getElementById("voiceBtn").addEventListener("click",function(){
   listen(btn,t=>{
     const p=parseVoice(t);
     view.y=today.y;view.m=p.m;
-    if(chartMode){setMode(false);}
-    draw();
+    draw();   /* stay in whichever view the entry was started from */
     const k=key(today.y,p.m,p.d);
     if((store[k]||[]).length>=MAX_PER_DAY){alert("That day is full ("+MAX_PER_DAY+" entries).");return;}
     openEntry(k,null);

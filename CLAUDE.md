@@ -35,6 +35,8 @@ The underlying grid is proleptic Gregorian: `dowOf()` delegates to `new Date(y, 
 
 The sizes are physical: `--cell:144px` is 1.5 in at 96 dpi, so 72/48/16 are 0.75 in / 0.5 in / 0.1667 in. **`layout()`'s `s` values are coupled to CSS class names** — each card gets `class="card s{s}"`, and `.s144/.s72/.s48/.s16` carry the matching font sizes. Adding a new size tier requires edits in both places, and `.s16` additionally hides all text and renders a dot.
 
+**On small screens the grid shrinks but `layout()` does not.** Rather than rewrite that pixel math responsively, `.cards` keeps its fixed 144px coordinate space and the whole layer is scaled by `transform:scale(var(--k))`. `syncCellScale()` measures a real day box after each `render()` (and on resize) and sets `--k` to `width/144`; it is `1` at desktop size. It measures a `:not(.today)` box deliberately — today's 4px border would skew the reading. Anything that changes cell size must keep `--k` in sync, or cards will detach from their boxes.
+
 **The chart day panel** (`#dayPanel`) is how the year chart is edited. Clicking a square expands it into a panel that is `position:fixed` and anchored to the square's `getBoundingClientRect()` — deliberately floating *over* the table so opening it never reflows or displaces a day square. An empty day opens straight into an inline entry form; a populated day lists its entries plus the remaining capacity. It replaced the old behavior where two-or-more entries kicked you out to the month grid.
 
 Three non-obvious constraints hold it together:
@@ -55,6 +57,8 @@ Times are matched by `TIMEPATS`, an ordered list tried first-match-wins, coverin
 **Voice entry is a two-phase state machine.** Phase one is single-shot dictation via `listen()`, which parses the whole utterance and prefills the entry modal. Two synthesized beeps (`beepTwice()`, Web Audio — no asset files, keeping the page self-contained) mark the handover. Phase two is `listenLoop()`, a *continuous* recognizer that restarts itself in `onend` (the service stops on every pause) and matches spoken commands: "set priority" (forces `prioC` to `VOICE_PRIO`, the blue `#1D5FE0`, deliberately bypassing the colour picker), "confirm" (clicks `entrySave`), "cancel".
 
 Two things this depends on: `listen()` calls `rec.stop()` before invoking its callback, and `startVoiceCommands()` waits ~450 ms before opening the second recognizer — two `SpeechRecognition` instances contending for the mic will throw. Every path that closes the entry modal must call `stopVoiceCommands()`, or the loop keeps the mic open after the modal is gone.
+
+Voice entry **does not change the view mode** — it sets `view.m` to the parsed month and redraws in place, so an entry started from the year chart lands back in the year chart. It used to force `setMode(false)`.
 
 ## Persistence
 
